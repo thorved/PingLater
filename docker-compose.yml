@@ -1,16 +1,18 @@
 services:
   app:
-    image: ghcr.io/thorved/pinglater:latest
-    container_name: pinglater
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pinglater-dev
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
       - PORT=8080
       - DB_PATH=/app/data/pinglater.db
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-change-in-production}
       - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
-      - DEFAULT_PASSWORD=${DEFAULT_PASSWORD}
+      - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:-admin123}
     volumes:
       - ./data:/app/data
     healthcheck:

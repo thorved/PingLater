@@ -1,10 +1,12 @@
 package routes
 
 import (
+	"net/http"
 	"os"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/user/pinglater/internal/db"
 	"github.com/user/pinglater/internal/routes/auth"
 	"github.com/user/pinglater/internal/routes/static"
 	"github.com/user/pinglater/internal/routes/webhooks"
@@ -19,6 +21,29 @@ func SetupRouter() *gin.Engine {
 	config.AllowAllOrigins = true
 	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
 	r.Use(cors.New(config))
+
+	// Health check endpoint (no auth required for Docker health checks)
+	r.GET("/health", func(c *gin.Context) {
+		database := db.GetDB()
+		sqlDB, err := database.DB()
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status": "unhealthy",
+				"error":  "database connection failed",
+			})
+			return
+		}
+		if err := sqlDB.Ping(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status": "unhealthy",
+				"error":  "database ping failed",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status": "healthy",
+		})
+	})
 
 	// API routes
 	api := r.Group("/api")
