@@ -3,8 +3,12 @@ FROM node:20-alpine AS web-builder
 
 WORKDIR /app/web
 
+# Install build dependencies
+RUN apk add --no-cache python3 make g++ git
+
 # Copy package files
-COPY web/package*.json ./
+COPY web/package.json ./
+COPY web/package-lock.json ./
 RUN npm ci
 
 # Copy web source code
