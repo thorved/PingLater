@@ -16,6 +16,8 @@ LICENSE
 .env.example
 .env.local
 .env.*.local
+web/.env
+web/.env.local
 
 # Node.js
 node_modules

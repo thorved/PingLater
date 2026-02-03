@@ -11,8 +11,12 @@ COPY web/package.json ./
 COPY web/package-lock.json ./
 RUN npm ci
 
-# Copy web source code
+# Copy web source code (excluding .env files for production build)
 COPY web/ .
+
+# Ensure no dev API URL is set for production builds
+# This forces relative URLs to be used
+ENV NEXT_PUBLIC_DEV_API_URL=""
 
 # Build the web application
 RUN npm run build

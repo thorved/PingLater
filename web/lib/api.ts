@@ -1,8 +1,24 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '/';
+// Determine the base URL based on environment
+// Development: use full URL to backend on port 8080
+// Production (static export): use relative URLs (same origin)
+// This works because the Go backend serves both frontend and API on the same port
+const getBaseURL = () => {
+  // Check if we're in development mode
+  // NEXT_PUBLIC_DEV_API_URL is set during development to point to backend
+  if (process.env.NEXT_PUBLIC_DEV_API_URL) {
+    return process.env.NEXT_PUBLIC_DEV_API_URL;
+  }
+  
+  // In production (static export), use relative URLs
+  // This automatically uses the current host:port serving the frontend
+  return "";
+};
+
+const API_BASE_URL = getBaseURL();
 
 export const api = {
   async login(username: string, password: string) {
-    const res = await fetch(`${API_URL}/api/auth/login`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -12,7 +28,7 @@ export const api = {
   },
 
   async getMe(token: string) {
-    const res = await fetch(`${API_URL}/api/auth/me`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch user');
@@ -20,7 +36,7 @@ export const api = {
   },
 
   async getWhatsAppStatus(token: string) {
-    const res = await fetch(`${API_URL}/api/whatsapp/status`, {
+    const res = await fetch(`${API_BASE_URL}/api/whatsapp/status`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch WhatsApp status');
@@ -28,7 +44,7 @@ export const api = {
   },
 
   async connectWhatsApp(token: string) {
-    const res = await fetch(`${API_URL}/api/whatsapp/connect`, {
+    const res = await fetch(`${API_BASE_URL}/api/whatsapp/connect`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -38,8 +54,8 @@ export const api = {
 
   async disconnectWhatsApp(token: string, clearSession = false) {
     const url = clearSession 
-      ? `${API_URL}/api/whatsapp/disconnect?clear=true`
-      : `${API_URL}/api/whatsapp/disconnect`;
+      ? `${API_BASE_URL}/api/whatsapp/disconnect?clear=true`
+      : `${API_BASE_URL}/api/whatsapp/disconnect`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -49,7 +65,7 @@ export const api = {
   },
 
   async getMetrics(token: string) {
-    const res = await fetch(`${API_URL}/api/whatsapp/metrics`, {
+    const res = await fetch(`${API_BASE_URL}/api/whatsapp/metrics`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch metrics');
@@ -57,7 +73,7 @@ export const api = {
   },
 
   async sendMessage(token: string, phoneNumber: string, message: string) {
-    const res = await fetch(`${API_URL}/api/whatsapp/send`, {
+    const res = await fetch(`${API_BASE_URL}/api/whatsapp/send`, {
       method: 'POST',
       headers: { 
         Authorization: `Bearer ${token}`,
@@ -71,7 +87,7 @@ export const api = {
 
   subscribeToEvents(token: string, onEvent: (event: any) => void, onError?: (error: any) => void) {
     const es = new EventSource(
-      `${API_URL}/api/whatsapp/events?token=${token}`,
+      `${API_BASE_URL}/api/whatsapp/events?token=${token}`,
       { withCredentials: false }
     );
 
@@ -118,7 +134,7 @@ export const api = {
 
   // Webhooks
   async getWebhooks(token: string) {
-    const res = await fetch(`${API_URL}/api/webhooks`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch webhooks');
@@ -137,7 +153,7 @@ export const api = {
     filter_group_jids?: string[];
     filter_group_names?: string[];
   }) {
-    const res = await fetch(`${API_URL}/api/webhooks`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks`, {
       method: 'POST',
       headers: { 
         Authorization: `Bearer ${token}`,
@@ -161,7 +177,7 @@ export const api = {
     filter_group_jids?: string[];
     filter_group_names?: string[];
   }) {
-    const res = await fetch(`${API_URL}/api/webhooks/${id}`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks/${id}`, {
       method: 'PUT',
       headers: { 
         Authorization: `Bearer ${token}`,
@@ -177,7 +193,7 @@ export const api = {
   },
 
   async deleteWebhook(token: string, id: number) {
-    const res = await fetch(`${API_URL}/api/webhooks/${id}`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -186,7 +202,7 @@ export const api = {
   },
 
   async getWebhookEvents(token: string) {
-    const res = await fetch(`${API_URL}/api/webhooks/events`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks/events`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch webhook events');
@@ -198,7 +214,7 @@ export const api = {
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
     
-    const res = await fetch(`${API_URL}/api/webhooks/${id}/deliveries?${query}`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks/${id}/deliveries?${query}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch webhook deliveries');
@@ -206,7 +222,7 @@ export const api = {
   },
 
   async getWebhookStats(token: string, id: number) {
-    const res = await fetch(`${API_URL}/api/webhooks/${id}/stats`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks/${id}/stats`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch webhook stats');
@@ -214,7 +230,7 @@ export const api = {
   },
 
   async testWebhook(token: string, id: number) {
-    const res = await fetch(`${API_URL}/api/webhooks/${id}/test`, {
+    const res = await fetch(`${API_BASE_URL}/api/webhooks/${id}/test`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -224,7 +240,7 @@ export const api = {
 
   // API Tokens
   async getAPITokens(token: string) {
-    const res = await fetch(`${API_URL}/api/auth/tokens`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/tokens`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch API tokens');
@@ -232,7 +248,7 @@ export const api = {
   },
 
   async getAvailableScopes(token: string) {
-    const res = await fetch(`${API_URL}/api/auth/tokens/scopes`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/tokens/scopes`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('Failed to fetch available scopes');
@@ -240,7 +256,7 @@ export const api = {
   },
 
   async createAPIToken(token: string, data: { name: string; scopes: string[]; expires_at?: string | null }) {
-    const res = await fetch(`${API_URL}/api/auth/tokens`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/tokens`, {
       method: 'POST',
       headers: { 
         Authorization: `Bearer ${token}`,
@@ -253,7 +269,7 @@ export const api = {
   },
 
   async deleteAPIToken(token: string, id: number) {
-    const res = await fetch(`${API_URL}/api/auth/tokens/${id}`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/tokens/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -262,7 +278,7 @@ export const api = {
   },
 
   async rotateAPIToken(token: string, id: number) {
-    const res = await fetch(`${API_URL}/api/auth/tokens/${id}/rotate`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/tokens/${id}/rotate`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -271,7 +287,7 @@ export const api = {
   },
 
   async updateAPIToken(token: string, id: number, data: { name?: string; is_active?: boolean }) {
-    const res = await fetch(`${API_URL}/api/auth/tokens/${id}`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/tokens/${id}`, {
       method: 'PUT',
       headers: { 
         Authorization: `Bearer ${token}`,
