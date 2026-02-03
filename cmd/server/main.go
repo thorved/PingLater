@@ -12,6 +12,7 @@ import (
 	"github.com/user/pinglater/internal/db"
 	"github.com/user/pinglater/internal/models"
 	"github.com/user/pinglater/internal/routes"
+	"github.com/user/pinglater/internal/services"
 	"github.com/user/pinglater/internal/whatsapp"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -72,13 +73,24 @@ func initWhatsAppClient() {
 	}
 
 	// Set up event callback to broadcast events and update metrics
-	waClient.SetEventCallback(func(eventType, message, details string) {
+	waClient.SetEventCallback(func(eventType, message, details string, data interface{}) {
 		// Broadcast event to all connected SSE clients
 		handlers.BroadcastEvent(models.EventType(eventType), message, details)
 
 		// Update message received counter
 		if eventType == "message_received" {
 			handlers.IncrementMessagesReceived()
+
+			// Trigger webhooks for message_received events
+			if msgData, ok := data.(models.MessageReceivedData); ok {
+				// Get the first user (single-user system)
+				database := db.GetDB()
+				var user models.User
+				if result := database.First(&user); result.Error == nil {
+					webhookService := services.GetWebhookService()
+					webhookService.TriggerMessageReceived(user.ID, msgData)
+				}
+			}
 		}
 	})
 

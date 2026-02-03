@@ -11,13 +11,15 @@ import (
 	"github.com/user/pinglater/internal/models"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 )
 
-type EventCallback func(eventType string, message string, details string)
+type EventCallback func(eventType string, message string, details string, data interface{})
 
 type Client struct {
 	client        *whatsmeow.Client
@@ -55,12 +57,12 @@ func (c *Client) SetEventCallback(callback EventCallback) {
 	c.mu.Unlock()
 }
 
-func (c *Client) notifyEvent(eventType, message, details string) {
+func (c *Client) notifyEvent(eventType, message, details string, data interface{}) {
 	c.mu.RLock()
 	callback := c.eventCallback
 	c.mu.RUnlock()
 	if callback != nil {
-		callback(eventType, message, details)
+		callback(eventType, message, details, data)
 	}
 }
 
@@ -80,6 +82,9 @@ func (c *Client) Initialize() error {
 		return fmt.Errorf("failed to create whatsapp store: %w", err)
 	}
 	c.container = container
+
+	// Set device name to PingLater
+	store.DeviceProps.Os = proto.String("PingLater")
 
 	// Get or create device
 	deviceStore, err := container.GetFirstDevice(ctx)
@@ -129,7 +134,7 @@ func (c *Client) handleEvent(evt interface{}) {
 		c.connectedAt = time.Time{}
 		c.mu.Unlock()
 		c.updateSessionStatus(false, "")
-		c.notifyEvent("disconnected", "Logged out from WhatsApp", "Session invalidated")
+		c.notifyEvent("disconnected", "Logged out from WhatsApp", "Session invalidated", nil)
 		// Session was invalidated (401), need to reinitialize and get new QR
 		go c.retryWithNewQR()
 	case *events.Connected:
@@ -137,20 +142,20 @@ func (c *Client) handleEvent(evt interface{}) {
 		c.connected = true
 		c.connectedAt = time.Now()
 		c.mu.Unlock()
-		c.notifyEvent("connected", "Connected to WhatsApp", "")
+		c.notifyEvent("connected", "Connected to WhatsApp", "", nil)
 	case *events.Disconnected:
 		c.mu.Lock()
 		c.connected = false
 		c.connectedAt = time.Time{}
 		c.mu.Unlock()
-		c.notifyEvent("disconnected", "Disconnected from WhatsApp", "")
+		c.notifyEvent("disconnected", "Disconnected from WhatsApp", "", nil)
 	case *events.PairSuccess:
 		c.mu.Lock()
 		c.phoneNumber = v.ID.User
 		c.connectedAt = time.Now()
 		c.mu.Unlock()
 		c.updateSessionStatus(true, v.ID.User)
-		c.notifyEvent("connected", "WhatsApp paired successfully", "Phone: "+v.ID.User)
+		c.notifyEvent("connected", "WhatsApp paired successfully", "Phone: "+v.ID.User, nil)
 		// Signal successful connection
 		select {
 		case c.connectedChan <- true:
@@ -158,7 +163,8 @@ func (c *Client) handleEvent(evt interface{}) {
 		}
 	case *events.Message:
 		// Handle incoming message
-		c.notifyEvent("message_received", "Message received", "From: "+v.Info.Sender.User)
+		data := c.extractMessageData(v)
+		c.notifyEvent("message_received", "Message received", "From: "+v.Info.Sender.User, data)
 	}
 }
 
@@ -169,12 +175,20 @@ func (c *Client) updateSessionStatus(connected bool, phoneNumber string) {
 		return
 	}
 
+	// Get the first user for single-user system
+	var user models.User
+	var userID uint
+	if result := database.First(&user); result.Error == nil {
+		userID = user.ID
+	}
+
 	now := time.Now()
 	var session models.WhatsAppSession
 	result := database.First(&session)
 	if result.Error != nil {
 		// Create new session
 		session = models.WhatsAppSession{
+			UserID:          userID,
 			Connected:       connected,
 			PhoneNumber:     phoneNumber,
 			LastConnectedAt: &now,
@@ -182,6 +196,7 @@ func (c *Client) updateSessionStatus(connected bool, phoneNumber string) {
 		database.Create(&session)
 	} else {
 		// Update existing
+		session.UserID = userID
 		session.Connected = connected
 		session.PhoneNumber = phoneNumber
 		if connected {
@@ -330,4 +345,35 @@ func (c *Client) GetStatus() models.WhatsAppStatus {
 		PhoneNumber:     c.phoneNumber,
 		QRCodeAvailable: len(c.qrChan) > 0,
 	}
+}
+
+// extractMessageData extracts message data from a WhatsApp message event
+func (c *Client) extractMessageData(msg *events.Message) models.MessageReceivedData {
+	data := models.MessageReceivedData{
+		From:      msg.Info.Sender.User,
+		MessageID: msg.Info.ID,
+		Timestamp: msg.Info.Timestamp.Unix(),
+		IsGroup:   msg.Info.IsGroup,
+	}
+
+	// Extract message content
+	if msg.Message != nil {
+		if msg.Message.Conversation != nil {
+			data.Content = *msg.Message.Conversation
+		} else if msg.Message.ExtendedTextMessage != nil && msg.Message.ExtendedTextMessage.Text != nil {
+			data.Content = *msg.Message.ExtendedTextMessage.Text
+		}
+	}
+
+	// Get sender name if available
+	if msg.Info.PushName != "" {
+		data.FromName = msg.Info.PushName
+	}
+
+	// Get group name if it's a group message
+	if msg.Info.IsGroup {
+		data.GroupName = msg.Info.Chat.String()
+	}
+
+	return data
 }

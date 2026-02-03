@@ -30,7 +30,8 @@ import {
   WifiOff,
   MessageSquare,
   Download,
-  Trash2
+  Trash2,
+  Webhook
 } from 'lucide-react';
 
 type Event = {
@@ -352,6 +353,14 @@ export default function Dashboard() {
             </div>
             
             <div className="flex items-center gap-4">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => router.push('/webhooks')}
+              >
+                <Webhook className="h-4 w-4 mr-2" />
+                Webhooks
+              </Button>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <User className="h-4 w-4" />
                 <span className="hidden sm:inline">Welcome, {username}</span>

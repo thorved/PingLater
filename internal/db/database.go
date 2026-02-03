@@ -21,7 +21,7 @@ func InitDatabase(dbPath string) (*gorm.DB, error) {
 	log.Println("Connected to SQLite database")
 
 	// Auto-migrate the schema
-	err = DB.AutoMigrate(&models.User{}, &models.WhatsAppSession{})
+	err = DB.AutoMigrate(&models.User{}, &models.WhatsAppSession{}, &models.Webhook{}, &models.WebhookDelivery{})
 	if err != nil {
 		return nil, err
 	}

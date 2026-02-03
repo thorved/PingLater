@@ -115,4 +115,85 @@ export const api = {
 
     return es;
   },
+
+  // Webhooks
+  async getWebhooks(token: string) {
+    const res = await fetch(`${API_URL}/api/webhooks`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch webhooks');
+    return res.json();
+  },
+
+  async createWebhook(token: string, data: { url: string; secret?: string; description?: string; event_types: string[]; is_active: boolean }) {
+    const res = await fetch(`${API_URL}/api/webhooks`, {
+      method: 'POST',
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create webhook');
+    return res.json();
+  },
+
+  async updateWebhook(token: string, id: number, data: { url?: string; secret?: string; description?: string; event_types?: string[]; is_active?: boolean }) {
+    const res = await fetch(`${API_URL}/api/webhooks/${id}`, {
+      method: 'PUT',
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update webhook');
+    return res.json();
+  },
+
+  async deleteWebhook(token: string, id: number) {
+    const res = await fetch(`${API_URL}/api/webhooks/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to delete webhook');
+    return res.json();
+  },
+
+  async getWebhookEvents(token: string) {
+    const res = await fetch(`${API_URL}/api/webhooks/events`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch webhook events');
+    return res.json();
+  },
+
+  async getWebhookDeliveries(token: string, id: number, params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    
+    const res = await fetch(`${API_URL}/api/webhooks/${id}/deliveries?${query}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch webhook deliveries');
+    return res.json();
+  },
+
+  async getWebhookStats(token: string, id: number) {
+    const res = await fetch(`${API_URL}/api/webhooks/${id}/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch webhook stats');
+    return res.json();
+  },
+
+  async testWebhook(token: string, id: number) {
+    const res = await fetch(`${API_URL}/api/webhooks/${id}/test`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to test webhook');
+    return res.json();
+  },
 };

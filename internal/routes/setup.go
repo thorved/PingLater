@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/user/pinglater/internal/routes/auth"
 	"github.com/user/pinglater/internal/routes/static"
+	"github.com/user/pinglater/internal/routes/webhooks"
 	"github.com/user/pinglater/internal/routes/whatsapp"
 )
 
@@ -24,6 +25,7 @@ func SetupRouter() *gin.Engine {
 	{
 		auth.RegisterRoutes(api)
 		whatsapp.RegisterRoutes(api)
+		webhooks.RegisterRoutes(api)
 	}
 
 	// Static routes
