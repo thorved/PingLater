@@ -17,6 +17,8 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
+type EventCallback func(eventType string, message string, details string)
+
 type Client struct {
 	client        *whatsmeow.Client
 	qrChan        chan string
@@ -26,6 +28,8 @@ type Client struct {
 	mu            sync.RWMutex
 	stopChan      chan struct{}
 	container     *sqlstore.Container
+	eventCallback EventCallback
+	connectedAt   time.Time
 }
 
 var (
@@ -42,6 +46,22 @@ func GetClient() *Client {
 		}
 	})
 	return instance
+}
+
+// SetEventCallback sets a callback function that will be called on WhatsApp events
+func (c *Client) SetEventCallback(callback EventCallback) {
+	c.mu.Lock()
+	c.eventCallback = callback
+	c.mu.Unlock()
+}
+
+func (c *Client) notifyEvent(eventType, message, details string) {
+	c.mu.RLock()
+	callback := c.eventCallback
+	c.mu.RUnlock()
+	if callback != nil {
+		callback(eventType, message, details)
+	}
 }
 
 func (c *Client) Initialize() error {
@@ -106,28 +126,39 @@ func (c *Client) handleEvent(evt interface{}) {
 		c.mu.Lock()
 		c.connected = false
 		c.phoneNumber = ""
+		c.connectedAt = time.Time{}
 		c.mu.Unlock()
 		c.updateSessionStatus(false, "")
+		c.notifyEvent("disconnected", "Logged out from WhatsApp", "Session invalidated")
 		// Session was invalidated (401), need to reinitialize and get new QR
 		go c.retryWithNewQR()
 	case *events.Connected:
 		c.mu.Lock()
 		c.connected = true
+		c.connectedAt = time.Now()
 		c.mu.Unlock()
+		c.notifyEvent("connected", "Connected to WhatsApp", "")
 	case *events.Disconnected:
 		c.mu.Lock()
 		c.connected = false
+		c.connectedAt = time.Time{}
 		c.mu.Unlock()
+		c.notifyEvent("disconnected", "Disconnected from WhatsApp", "")
 	case *events.PairSuccess:
 		c.mu.Lock()
 		c.phoneNumber = v.ID.User
+		c.connectedAt = time.Now()
 		c.mu.Unlock()
 		c.updateSessionStatus(true, v.ID.User)
+		c.notifyEvent("connected", "WhatsApp paired successfully", "Phone: "+v.ID.User)
 		// Signal successful connection
 		select {
 		case c.connectedChan <- true:
 		default:
 		}
+	case *events.Message:
+		// Handle incoming message
+		c.notifyEvent("message_received", "Message received", "From: "+v.Info.Sender.User)
 	}
 }
 
@@ -138,19 +169,24 @@ func (c *Client) updateSessionStatus(connected bool, phoneNumber string) {
 		return
 	}
 
+	now := time.Now()
 	var session models.WhatsAppSession
 	result := database.First(&session)
 	if result.Error != nil {
 		// Create new session
 		session = models.WhatsAppSession{
-			Connected:   connected,
-			PhoneNumber: phoneNumber,
+			Connected:       connected,
+			PhoneNumber:     phoneNumber,
+			LastConnectedAt: &now,
 		}
 		database.Create(&session)
 	} else {
 		// Update existing
 		session.Connected = connected
 		session.PhoneNumber = phoneNumber
+		if connected {
+			session.LastConnectedAt = &now
+		}
 		database.Save(&session)
 	}
 }
@@ -258,6 +294,12 @@ func (c *Client) GetPhoneNumber() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.phoneNumber
+}
+
+func (c *Client) GetConnectedAt() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.connectedAt
 }
 
 func (c *Client) SendMessage(jid string, message string) error {

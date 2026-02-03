@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/glebarez/go-sqlite"
 	"github.com/joho/godotenv"
+	"github.com/user/pinglater/internal/api/handlers"
 	"github.com/user/pinglater/internal/api/middleware"
 	"github.com/user/pinglater/internal/db"
 	"github.com/user/pinglater/internal/models"
@@ -69,6 +70,18 @@ func initWhatsAppClient() {
 	if err := waClient.Initialize(); err != nil {
 		log.Fatal("Failed to initialize WhatsApp client:", err)
 	}
+
+	// Set up event callback to broadcast events and update metrics
+	waClient.SetEventCallback(func(eventType, message, details string) {
+		// Broadcast event to all connected SSE clients
+		handlers.BroadcastEvent(models.EventType(eventType), message, details)
+
+		// Update message received counter
+		if eventType == "message_received" {
+			handlers.IncrementMessagesReceived()
+		}
+	})
+
 	// Auto-connect if there's an existing session
 	if err := waClient.AutoConnect(); err != nil {
 		log.Println("Failed to auto-connect WhatsApp:", err)

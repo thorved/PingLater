@@ -14,5 +14,8 @@ func RegisterRoutes(api *gin.RouterGroup) {
 		protected.GET("/whatsapp/qr", handlers.GetWhatsAppQR)
 		protected.POST("/whatsapp/connect", handlers.ConnectWhatsApp)
 		protected.POST("/whatsapp/disconnect", handlers.DisconnectWhatsApp)
+		protected.POST("/whatsapp/send", handlers.SendMessage)
+		protected.GET("/whatsapp/events", handlers.GetEvents)
+		protected.GET("/whatsapp/metrics", handlers.GetMetrics)
 	}
 }
