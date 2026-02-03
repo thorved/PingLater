@@ -56,6 +56,7 @@ type WebhookPayload struct {
 // MessageReceivedData represents the data for message_received events
 type MessageReceivedData struct {
 	From      string `json:"from"`
+	FromPhone string `json:"from_phone"`
 	FromName  string `json:"from_name,omitempty"`
 	Content   string `json:"content"`
 	MessageID string `json:"message_id"`

@@ -349,8 +349,12 @@ func (c *Client) GetStatus() models.WhatsAppStatus {
 
 // extractMessageData extracts message data from a WhatsApp message event
 func (c *Client) extractMessageData(msg *events.Message) models.MessageReceivedData {
+	// Get actual phone number from SenderAlt or LID store
+	fromPhone := c.getSenderPhoneNumber(msg)
+
 	data := models.MessageReceivedData{
 		From:      msg.Info.Sender.User,
+		FromPhone: fromPhone,
 		MessageID: msg.Info.ID,
 		Timestamp: msg.Info.Timestamp.Unix(),
 		IsGroup:   msg.Info.IsGroup,
@@ -376,4 +380,23 @@ func (c *Client) extractMessageData(msg *events.Message) models.MessageReceivedD
 	}
 
 	return data
+}
+
+// getSenderPhoneNumber extracts the phone number from a message, handling LID addressing
+func (c *Client) getSenderPhoneNumber(msg *events.Message) string {
+	// First, check if SenderAlt contains the phone number (when using LID addressing)
+	if !msg.Info.SenderAlt.IsEmpty() && msg.Info.SenderAlt.Server == types.DefaultUserServer {
+		return msg.Info.SenderAlt.User
+	}
+
+	// If the sender is a LID, try to look up the phone number from the store
+	if msg.Info.Sender.Server == types.HiddenUserServer {
+		pn, err := c.client.Store.LIDs.GetPNForLID(context.Background(), msg.Info.Sender)
+		if err == nil && !pn.IsEmpty() {
+			return pn.User
+		}
+	}
+
+	// Fallback to the sender's User field (already a phone number)
+	return msg.Info.Sender.User
 }
