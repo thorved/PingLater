@@ -31,7 +31,8 @@ import {
   MessageSquare,
   Download,
   Trash2,
-  Webhook
+  Webhook,
+  Settings
 } from 'lucide-react';
 
 type Event = {
@@ -116,7 +117,7 @@ export default function Dashboard() {
 
   const subscribeToEvents = useCallback(() => {
     if (!token) return null;
-    
+
     const es = api.subscribeToEvents(
       token,
       (event) => {
@@ -127,14 +128,20 @@ export default function Dashboard() {
           timestamp: new Date().toISOString(),
         };
         setEvents((prev) => [...prev.slice(-49), newEvent]); // Keep last 50 events
+
+        // Refresh status on connection state changes
+        if (event.type === 'connected' || event.type === 'disconnected') {
+          fetchStatus();
+          fetchMetrics();
+        }
       },
       (error) => {
         console.error('Event subscription error:', error);
       }
     );
-    
+
     return es;
-  }, [token]);
+  }, [token, fetchStatus, fetchMetrics]);
 
   useEffect(() => {
     if (!isLoading && !token) {
@@ -240,15 +247,22 @@ export default function Dashboard() {
     });
 
     // Listen for connection success
-    es.addEventListener('connected', (event: MessageEvent) => {
+    es.addEventListener('connected', async (event: MessageEvent) => {
       console.log('WhatsApp connected:', event.data);
       es.close();
       setQrCode(null);
       setLoading(false);
       setEventSource(null);
-      fetchStatus();
+      
+      // Fetch both status and metrics to update UI
+      try {
+        await fetchStatus();
+        await fetchMetrics();
+      } catch (error) {
+        console.error('Failed to refresh status after connection:', error);
+      }
     });
-  }, [token, fetchStatus]);
+  }, [token, fetchStatus, fetchMetrics]);
 
   // Countdown timer effect
   useEffect(() => {
@@ -360,6 +374,14 @@ export default function Dashboard() {
               >
                 <Webhook className="h-4 w-4 mr-2" />
                 Webhooks
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => router.push('/settings/api-tokens')}
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                API Tokens
               </Button>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <User className="h-4 w-4" />

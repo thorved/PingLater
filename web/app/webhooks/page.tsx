@@ -280,6 +280,13 @@ export default function WebhooksPage() {
             </div>
             
             <div className="flex items-center gap-4">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => router.push('/settings/api-tokens')}
+              >
+                API Tokens
+              </Button>
               <ThemeToggle />
               <Button 
                 variant="ghost" 
@@ -347,12 +354,17 @@ export default function WebhooksPage() {
                             {webhook.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          {webhook.event_types.map(et => (
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {webhook.event_types.slice(0, 3).map(et => (
                             <Badge key={et} variant="outline" className="text-xs">
                               {et}
                             </Badge>
                           ))}
+                          {webhook.event_types.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{webhook.event_types.length - 3} more
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     ))

@@ -196,4 +196,66 @@ export const api = {
     if (!res.ok) throw new Error('Failed to test webhook');
     return res.json();
   },
+
+  // API Tokens
+  async getAPITokens(token: string) {
+    const res = await fetch(`${API_URL}/api/auth/tokens`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch API tokens');
+    return res.json();
+  },
+
+  async getAvailableScopes(token: string) {
+    const res = await fetch(`${API_URL}/api/auth/tokens/scopes`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch available scopes');
+    return res.json();
+  },
+
+  async createAPIToken(token: string, data: { name: string; scopes: string[]; expires_at?: string | null }) {
+    const res = await fetch(`${API_URL}/api/auth/tokens`, {
+      method: 'POST',
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create API token');
+    return res.json();
+  },
+
+  async deleteAPIToken(token: string, id: number) {
+    const res = await fetch(`${API_URL}/api/auth/tokens/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to delete API token');
+    return res.json();
+  },
+
+  async rotateAPIToken(token: string, id: number) {
+    const res = await fetch(`${API_URL}/api/auth/tokens/${id}/rotate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to rotate API token');
+    return res.json();
+  },
+
+  async updateAPIToken(token: string, id: number, data: { name?: string; is_active?: boolean }) {
+    const res = await fetch(`${API_URL}/api/auth/tokens/${id}`, {
+      method: 'PUT',
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update API token');
+    return res.json();
+  },
 };
+
