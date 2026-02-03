@@ -20,6 +20,11 @@ func ConnectWhatsApp(c *gin.Context) {
 	client := whatsapp.GetClient()
 
 	if err := client.Connect(); err != nil {
+		// If already connected, return success instead of error
+		if err.Error() == "already connected" {
+			c.JSON(http.StatusOK, gin.H{"message": "WhatsApp already connected"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -51,6 +56,7 @@ func GetWhatsAppQR(c *gin.Context) {
 	c.Writer.Flush()
 
 	qrChan := client.GetQRCode()
+	connectedChan := client.GetConnectedChan()
 
 	c.Stream(func(w io.Writer) bool {
 		select {
@@ -62,6 +68,9 @@ func GetWhatsAppQR(c *gin.Context) {
 			c.SSEvent("qr", qrCode)
 			// Keep stream alive to receive more QR codes as they refresh
 			return true
+		case <-connectedChan:
+			c.SSEvent("connected", "WhatsApp connected successfully")
+			return false
 		case <-time.After(60 * time.Second):
 			c.SSEvent("timeout", "QR code expired")
 			return false

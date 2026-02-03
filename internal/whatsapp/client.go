@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/user/pinglater/internal/db"
 	"github.com/user/pinglater/internal/models"
@@ -17,13 +18,14 @@ import (
 )
 
 type Client struct {
-	client      *whatsmeow.Client
-	qrChan      chan string
-	connected   bool
-	phoneNumber string
-	mu          sync.RWMutex
-	stopChan    chan struct{}
-	container   *sqlstore.Container
+	client        *whatsmeow.Client
+	qrChan        chan string
+	connectedChan chan bool
+	connected     bool
+	phoneNumber   string
+	mu            sync.RWMutex
+	stopChan      chan struct{}
+	container     *sqlstore.Container
 }
 
 var (
@@ -34,8 +36,9 @@ var (
 func GetClient() *Client {
 	once.Do(func() {
 		instance = &Client{
-			qrChan:   make(chan string, 1),
-			stopChan: make(chan struct{}),
+			qrChan:        make(chan string, 1),
+			connectedChan: make(chan bool, 1),
+			stopChan:      make(chan struct{}),
 		}
 	})
 	return instance
@@ -74,6 +77,29 @@ func (c *Client) Initialize() error {
 	return nil
 }
 
+func (c *Client) AutoConnect() error {
+	if c.client == nil {
+		return fmt.Errorf("client not initialized")
+	}
+
+	// Check if there's already a session (device ID exists)
+	if c.client.Store.ID != nil {
+		// There's an existing session, connect automatically
+		fmt.Printf("Found existing WhatsApp session for %s, reconnecting...\n", c.client.Store.ID.User)
+		if err := c.client.Connect(); err != nil {
+			return fmt.Errorf("failed to auto-connect: %w", err)
+		}
+		c.mu.Lock()
+		c.connected = true
+		c.phoneNumber = c.client.Store.ID.User
+		c.mu.Unlock()
+		c.updateSessionStatus(true, c.client.Store.ID.User)
+		fmt.Println("WhatsApp reconnected successfully")
+	}
+
+	return nil
+}
+
 func (c *Client) handleEvent(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.LoggedOut:
@@ -82,6 +108,8 @@ func (c *Client) handleEvent(evt interface{}) {
 		c.phoneNumber = ""
 		c.mu.Unlock()
 		c.updateSessionStatus(false, "")
+		// Session was invalidated (401), need to reinitialize and get new QR
+		go c.retryWithNewQR()
 	case *events.Connected:
 		c.mu.Lock()
 		c.connected = true
@@ -95,6 +123,11 @@ func (c *Client) handleEvent(evt interface{}) {
 		c.phoneNumber = v.ID.User
 		c.mu.Unlock()
 		c.updateSessionStatus(true, v.ID.User)
+		// Signal successful connection
+		select {
+		case c.connectedChan <- true:
+		default:
+		}
 	}
 }
 
@@ -122,9 +155,25 @@ func (c *Client) updateSessionStatus(connected bool, phoneNumber string) {
 	}
 }
 
+func (c *Client) retryWithNewQR() {
+	// Wait a bit for cleanup
+	time.Sleep(1 * time.Second)
+
+	c.mu.Lock()
+	// Clear the old client so we'll create a new one with fresh device
+	c.client = nil
+	c.mu.Unlock()
+
+	// Try to connect again - this will create a new device and QR channel
+	if err := c.Connect(); err != nil {
+		fmt.Printf("Failed to retry connection: %v\n", err)
+	}
+}
+
 func (c *Client) Connect() error {
 	c.mu.Lock()
-	if c.client != nil && c.client.Store.ID != nil {
+	// Check if already connected to WhatsApp servers
+	if c.connected {
 		c.mu.Unlock()
 		return fmt.Errorf("already connected")
 	}
@@ -193,6 +242,10 @@ func (c *Client) Disconnect() error {
 
 func (c *Client) GetQRCode() chan string {
 	return c.qrChan
+}
+
+func (c *Client) GetConnectedChan() chan bool {
+	return c.connectedChan
 }
 
 func (c *Client) IsConnected() bool {

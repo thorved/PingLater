@@ -69,4 +69,8 @@ func initWhatsAppClient() {
 	if err := waClient.Initialize(); err != nil {
 		log.Fatal("Failed to initialize WhatsApp client:", err)
 	}
+	// Auto-connect if there's an existing session
+	if err := waClient.AutoConnect(); err != nil {
+		log.Println("Failed to auto-connect WhatsApp:", err)
+	}
 }

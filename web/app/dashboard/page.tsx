@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
@@ -28,6 +28,8 @@ export default function Dashboard() {
   const [waStatus, setWaStatus] = useState<any>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [countdown, setCountdown] = useState<number>(30);
+  const [eventSource, setEventSource] = useState<EventSource | null>(null);
 
   useEffect(() => {
     if (!isLoading && !token) {
@@ -39,7 +41,7 @@ export default function Dashboard() {
     }
   }, [token, isLoading]);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     if (!token) return;
     try {
       const status = await api.getWhatsAppStatus(token);
@@ -47,45 +49,118 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Failed to fetch status:', error);
     }
-  };
+  }, [token]);
 
   const connectWhatsApp = async () => {
     if (!token) return;
     setLoading(true);
+    setCountdown(30);
     try {
       await api.connectWhatsApp(token);
-      // Listen for QR code via SSE with token in query param
-      const eventSource = new EventSource(
-        `${process.env.NEXT_PUBLIC_API_URL || ''}/api/whatsapp/qr?token=${token}`,
-        { withCredentials: false }
-      );
-      
-      eventSource.addEventListener('qr', (event) => {
-        setQrCode(event.data);
-      });
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        setLoading(false);
-      };
-
-      // Close after 60 seconds
-      setTimeout(() => {
-        eventSource.close();
-        setLoading(false);
-        fetchStatus();
-      }, 60000);
+      startQRStream();
     } catch (error) {
       console.error('Failed to connect:', error);
       setLoading(false);
     }
   };
 
+  const startQRStream = useCallback(() => {
+    if (!token) return;
+    
+    // Close existing connection if any
+    if (eventSource) {
+      eventSource.close();
+    }
+    
+    // Reset countdown
+    setCountdown(30);
+    
+    // Listen for QR code via SSE with token in query param
+    const es = new EventSource(
+      `${process.env.NEXT_PUBLIC_API_URL || '/'}/api/whatsapp/qr?token=${token}`,
+      { withCredentials: false }
+    );
+    setEventSource(es);
+    
+    es.addEventListener('qr', (event: MessageEvent) => {
+      console.log('QR received:', event.data ? 'Yes (length: ' + event.data.length + ')' : 'No');
+      setQrCode(event.data);
+      setCountdown(30); // Reset countdown when new QR arrives
+    });
+
+    es.onerror = (error) => {
+      console.log('SSE Error:', error);
+      es.close();
+      setLoading(false);
+      setEventSource(null);
+    };
+    
+    es.onopen = () => {
+      console.log('SSE Connection opened');
+    };
+    
+    es.addEventListener('timeout', (event: MessageEvent) => {
+      console.log('QR Timeout:', event.data);
+      // QR expired, request new one
+      setQrCode(null);
+      setCountdown(30);
+    });
+    
+    es.addEventListener('error', (event: MessageEvent) => {
+      console.log('QR Error:', event.data);
+      es.close();
+      setLoading(false);
+      setEventSource(null);
+    });
+
+    // Listen for connection success
+    es.addEventListener('connected', (event: MessageEvent) => {
+      console.log('WhatsApp connected:', event.data);
+      es.close();
+      setQrCode(null);
+      setLoading(false);
+      setEventSource(null);
+      fetchStatus();
+    });
+  }, [token, fetchStatus]);
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (!qrCode) return;
+    
+    if (countdown <= 0) {
+      // Auto-refresh when countdown reaches 0
+      setQrCode(null);
+      startQRStream();
+      return;
+    }
+    
+    const timer = setInterval(() => {
+      setCountdown((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [qrCode, countdown, startQRStream]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [eventSource]);
+
   const disconnectWhatsApp = async () => {
     if (!token) return;
     try {
       await api.disconnectWhatsApp(token);
+      if (eventSource) {
+        eventSource.close();
+        setEventSource(null);
+      }
       setQrCode(null);
+      setCountdown(30);
       fetchStatus();
     } catch (error) {
       console.error('Failed to disconnect:', error);
@@ -251,10 +326,26 @@ export default function Dashboard() {
                     <div className="p-6 bg-white rounded-xl border shadow-sm">
                       <QRCodeSVG value={qrCode} size={256} />
                     </div>
-                    <Badge variant="secondary" className="gap-1">
-                      <Clock className="h-3 w-3" />
-                      Expires in 60 seconds
-                    </Badge>
+                    <div className="flex flex-col items-center gap-2">
+                      <Badge 
+                        variant={countdown <= 10 ? "destructive" : "secondary"} 
+                        className="gap-1"
+                      >
+                        <Clock className="h-3 w-3" />
+                        Expires in {countdown} seconds
+                      </Badge>
+                      {countdown <= 10 && countdown > 0 && (
+                        <p className="text-xs text-destructive">
+                          QR code will refresh automatically
+                        </p>
+                      )}
+                      {countdown === 0 && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Refreshing QR code...</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </>
               )}
