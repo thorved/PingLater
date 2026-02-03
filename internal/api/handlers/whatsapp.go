@@ -87,6 +87,7 @@ func GetWhatsAppQR(c *gin.Context) {
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	c.Writer.Header().Set("X-Accel-Buffering", "no") // Disable proxy buffering for SSE
 
 	// Flush headers immediately
 	c.Writer.Flush()
@@ -94,25 +95,74 @@ func GetWhatsAppQR(c *gin.Context) {
 	qrChan := client.GetQRCode()
 	connectedChan := client.GetConnectedChan()
 
+	// Send initial ping to confirm SSE connection
+	c.SSEvent("ping", "connected")
+	c.Writer.Flush()
+
 	c.Stream(func(w io.Writer) bool {
 		select {
 		case qrCode, ok := <-qrChan:
 			if !ok {
 				c.SSEvent("error", "QR channel closed")
+				c.Writer.Flush()
 				return false
 			}
 			c.SSEvent("qr", qrCode)
+			c.Writer.Flush()
 			// Keep stream alive to receive more QR codes as they refresh
 			return true
 		case <-connectedChan:
 			c.SSEvent("connected", "WhatsApp connected successfully")
+			c.Writer.Flush()
 			return false
 		case <-time.After(60 * time.Second):
 			c.SSEvent("timeout", "QR code expired")
+			c.Writer.Flush()
 			return false
 		case <-c.Request.Context().Done():
 			return false
 		}
+	})
+}
+
+// GetCurrentQRCode returns the current QR code for polling-based frontends
+// This is an alternative to the SSE-based GetWhatsAppQR for environments where SSE doesn't work
+func GetCurrentQRCode(c *gin.Context) {
+	client := whatsapp.GetClient()
+
+	qrCode, expired, connected := client.GetCurrentQR()
+
+	if connected {
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "connected",
+			"qr_code":   "",
+			"message":   "WhatsApp is already connected",
+		})
+		return
+	}
+
+	if expired {
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "expired",
+			"qr_code":   "",
+			"message":   "QR code expired, please reconnect",
+		})
+		return
+	}
+
+	if qrCode == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "waiting",
+			"qr_code":   "",
+			"message":   "Waiting for QR code...",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "pending",
+		"qr_code": qrCode,
+		"message": "Scan this QR code with WhatsApp",
 	})
 }
 

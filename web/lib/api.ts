@@ -85,6 +85,15 @@ export const api = {
     return res.json();
   },
 
+  // Polling-based QR code retrieval (alternative to SSE)
+  async getCurrentQR(token: string): Promise<{ status: string; qr_code: string; message: string }> {
+    const res = await fetch(`${API_BASE_URL}/api/whatsapp/current-qr`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch QR code');
+    return res.json();
+  },
+
   subscribeToEvents(token: string, onEvent: (event: any) => void, onError?: (error: any) => void) {
     const es = new EventSource(
       `${API_BASE_URL}/api/whatsapp/events?token=${token}`,

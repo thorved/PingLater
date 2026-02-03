@@ -82,7 +82,7 @@ export default function Dashboard() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState<number>(30);
-  const [eventSource, setEventSource] = useState<EventSource | null>(null);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   
   // Events and metrics
   const [events, setEvents] = useState<Event[]>([]);
@@ -190,79 +190,71 @@ export default function Dashboard() {
     setCountdown(30);
     try {
       await api.connectWhatsApp(token);
-      startQRStream();
+      startQRPolling();
     } catch (error) {
       console.error('Failed to connect:', error);
       setLoading(false);
     }
   };
 
-  const startQRStream = useCallback(() => {
+  const stopQRPolling = useCallback(() => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  }, [pollingInterval]);
+
+  const startQRPolling = useCallback(() => {
     if (!token) return;
     
-    // Close existing connection if any
-    if (eventSource) {
-      eventSource.close();
-    }
+    // Stop existing polling if any
+    stopQRPolling();
     
     // Reset countdown
     setCountdown(30);
     
-    // Listen for QR code via SSE with token in query param
-    const es = new EventSource(
-      `${process.env.NEXT_PUBLIC_API_URL || '/'}/api/whatsapp/qr?token=${token}`,
-      { withCredentials: false }
-    );
-    setEventSource(es);
-    
-    es.addEventListener('qr', (event: MessageEvent) => {
-      console.log('QR received:', event.data ? 'Yes (length: ' + event.data.length + ')' : 'No');
-      setQrCode(event.data);
-      setCountdown(30); // Reset countdown when new QR arrives
-    });
-
-    es.onerror = (error) => {
-      console.log('SSE Error:', error);
-      es.close();
-      setLoading(false);
-      setEventSource(null);
-    };
-    
-    es.onopen = () => {
-      console.log('SSE Connection opened');
-    };
-    
-    es.addEventListener('timeout', (event: MessageEvent) => {
-      console.log('QR Timeout:', event.data);
-      // QR expired, request new one
-      setQrCode(null);
-      setCountdown(30);
-    });
-    
-    es.addEventListener('error', (event: MessageEvent) => {
-      console.log('QR Error:', event.data);
-      es.close();
-      setLoading(false);
-      setEventSource(null);
-    });
-
-    // Listen for connection success
-    es.addEventListener('connected', async (event: MessageEvent) => {
-      console.log('WhatsApp connected:', event.data);
-      es.close();
-      setQrCode(null);
-      setLoading(false);
-      setEventSource(null);
-      
-      // Fetch both status and metrics to update UI
+    // Poll for QR code every second
+    const pollQR = async () => {
       try {
-        await fetchStatus();
-        await fetchMetrics();
+        const result = await api.getCurrentQR(token);
+        console.log('QR Poll result:', result.status);
+        
+        if (result.status === 'connected') {
+          // WhatsApp connected successfully
+          stopQRPolling();
+          setQrCode(null);
+          setLoading(false);
+          await fetchStatus();
+          await fetchMetrics();
+          return;
+        }
+        
+        if (result.status === 'pending' && result.qr_code) {
+          // Got a QR code
+          if (qrCode !== result.qr_code) {
+            console.log('New QR received (length:', result.qr_code.length, ')');
+            setQrCode(result.qr_code);
+            setCountdown(30); // Reset countdown when new QR arrives
+          }
+        }
+        
+        if (result.status === 'expired') {
+          // QR expired, reset
+          setQrCode(null);
+          setCountdown(30);
+        }
       } catch (error) {
-        console.error('Failed to refresh status after connection:', error);
+        console.error('QR Poll error:', error);
       }
-    });
-  }, [token, fetchStatus, fetchMetrics]);
+    };
+
+    // Start polling immediately
+    pollQR();
+    
+    // Then poll every 1 second
+    const intervalId = setInterval(pollQR, 1000);
+    setPollingInterval(intervalId);
+  }, [token, fetchStatus, fetchMetrics, qrCode, stopQRPolling]);
 
   // Countdown timer effect
   useEffect(() => {
@@ -271,7 +263,7 @@ export default function Dashboard() {
     if (countdown <= 0) {
       // Auto-refresh when countdown reaches 0
       setQrCode(null);
-      startQRStream();
+      startQRPolling();
       return;
     }
     
@@ -280,25 +272,22 @@ export default function Dashboard() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [qrCode, countdown, startQRStream]);
+  }, [qrCode, countdown, startQRPolling]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (eventSource) {
-        eventSource.close();
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
       }
     };
-  }, [eventSource]);
+  }, [pollingInterval]);
 
   const disconnectWhatsApp = async () => {
     if (!token) return;
     try {
       await api.disconnectWhatsApp(token);
-      if (eventSource) {
-        eventSource.close();
-        setEventSource(null);
-      }
+      stopQRPolling();
       setQrCode(null);
       setCountdown(30);
       fetchStatus();
@@ -314,10 +303,7 @@ export default function Dashboard() {
     }
     try {
       await api.disconnectWhatsApp(token, true);
-      if (eventSource) {
-        eventSource.close();
-        setEventSource(null);
-      }
+      stopQRPolling();
       setQrCode(null);
       setCountdown(30);
       setWaStatus(null);

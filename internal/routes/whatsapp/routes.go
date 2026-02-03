@@ -13,6 +13,7 @@ func RegisterRoutes(api *gin.RouterGroup) {
 	{
 		protected.GET("/whatsapp/status", handlers.GetWhatsAppStatus)
 		protected.GET("/whatsapp/qr", handlers.GetWhatsAppQR)
+		protected.GET("/whatsapp/current-qr", handlers.GetCurrentQRCode) // Polling alternative to SSE
 		protected.POST("/whatsapp/connect", handlers.ConnectWhatsApp)
 		protected.POST("/whatsapp/disconnect", handlers.DisconnectWhatsApp)
 		protected.GET("/whatsapp/events", handlers.GetEvents)

@@ -32,6 +32,8 @@ type Client struct {
 	container     *sqlstore.Container
 	eventCallback EventCallback
 	connectedAt   time.Time
+	currentQR     string    // Stores the latest QR code for polling
+	qrExpiry      time.Time // When the current QR expires
 }
 
 var (
@@ -252,6 +254,12 @@ func (c *Client) Connect() error {
 		go func() {
 			for evt := range qrChan {
 				if evt.Event == "code" {
+					// Store QR code for polling endpoint
+					c.mu.Lock()
+					c.currentQR = evt.Code
+					c.qrExpiry = time.Now().Add(60 * time.Second) // QR codes typically expire in 60s
+					c.mu.Unlock()
+
 					// Clear any old QR code first (non-blocking)
 					select {
 					case <-c.qrChan:
@@ -264,6 +272,10 @@ func (c *Client) Connect() error {
 					}
 				}
 			}
+			// Clear QR when channel closes
+			c.mu.Lock()
+			c.currentQR = ""
+			c.mu.Unlock()
 		}()
 	} else {
 		// Already have session, connect directly
@@ -285,6 +297,7 @@ func (c *Client) Disconnect() error {
 		c.mu.Lock()
 		c.connected = false
 		c.phoneNumber = ""
+		c.currentQR = "" // Clear QR on disconnect
 		c.mu.Unlock()
 		c.updateSessionStatus(false, "")
 	}
@@ -293,6 +306,33 @@ func (c *Client) Disconnect() error {
 
 func (c *Client) GetQRCode() chan string {
 	return c.qrChan
+}
+
+// GetCurrentQR returns the current QR code for polling (non-channel based)
+func (c *Client) GetCurrentQR() (qrCode string, expired bool, connected bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	if c.connected {
+		return "", false, true
+	}
+	
+	if c.currentQR == "" {
+		return "", false, false
+	}
+	
+	if time.Now().After(c.qrExpiry) {
+		return "", true, false
+	}
+	
+	return c.currentQR, false, false
+}
+
+// ClearCurrentQR clears the stored QR code
+func (c *Client) ClearCurrentQR() {
+	c.mu.Lock()
+	c.currentQR = ""
+	c.mu.Unlock()
 }
 
 func (c *Client) GetConnectedChan() chan bool {
