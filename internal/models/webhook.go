@@ -15,6 +15,13 @@ type Webhook struct {
 	EventTypes  string    `gorm:"type:text" json:"event_types"` // Comma-separated event types
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+
+	// Filter fields
+	FilterPhoneNumbers   string `gorm:"type:text" json:"filter_phone_numbers"`              // Comma-separated phone numbers
+	FilterPhoneMatchType string `gorm:"default:'whitelist'" json:"filter_phone_match_type"` // "whitelist" or "blacklist"
+	FilterChatType       string `gorm:"default:'all'" json:"filter_chat_type"`              // "all", "individual", "group"
+	FilterGroupJIDs      string `gorm:"type:text" json:"filter_group_jids"`                 // Comma-separated group JIDs
+	FilterGroupNames     string `gorm:"type:text" json:"filter_group_names"`                // Comma-separated group names
 }
 
 // WebhookDelivery logs each webhook delivery attempt
@@ -72,6 +79,12 @@ type WebhookCreateRequest struct {
 	Description string   `json:"description,omitempty"`
 	EventTypes  []string `json:"event_types" binding:"required"`
 	IsActive    bool     `json:"is_active"`
+	// Filter fields
+	FilterPhoneNumbers   []string `json:"filter_phone_numbers,omitempty"`
+	FilterPhoneMatchType string   `json:"filter_phone_match_type,omitempty"`
+	FilterChatType       string   `json:"filter_chat_type,omitempty"`
+	FilterGroupJIDs      []string `json:"filter_group_jids,omitempty"`
+	FilterGroupNames     []string `json:"filter_group_names,omitempty"`
 }
 
 // WebhookUpdateRequest represents the request body for updating a webhook
@@ -81,6 +94,12 @@ type WebhookUpdateRequest struct {
 	Description string   `json:"description,omitempty"`
 	EventTypes  []string `json:"event_types,omitempty"`
 	IsActive    *bool    `json:"is_active,omitempty"`
+	// Filter fields
+	FilterPhoneNumbers   []string `json:"filter_phone_numbers,omitempty"`
+	FilterPhoneMatchType string   `json:"filter_phone_match_type,omitempty"`
+	FilterChatType       string   `json:"filter_chat_type,omitempty"`
+	FilterGroupJIDs      []string `json:"filter_group_jids,omitempty"`
+	FilterGroupNames     []string `json:"filter_group_names,omitempty"`
 }
 
 // WebhookResponse represents a webhook in API responses
@@ -92,6 +111,12 @@ type WebhookResponse struct {
 	EventTypes  []string  `json:"event_types"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Filter fields
+	FilterPhoneNumbers   []string `json:"filter_phone_numbers"`
+	FilterPhoneMatchType string   `json:"filter_phone_match_type"`
+	FilterChatType       string   `json:"filter_chat_type"`
+	FilterGroupJIDs      []string `json:"filter_group_jids"`
+	FilterGroupNames     []string `json:"filter_group_names"`
 }
 
 // WebhookDeliveryResponse represents a delivery log entry
@@ -109,13 +134,18 @@ type WebhookDeliveryResponse struct {
 // ToResponse converts Webhook to WebhookResponse (hides sensitive fields)
 func (w *Webhook) ToResponse() WebhookResponse {
 	return WebhookResponse{
-		ID:          w.ID,
-		URL:         w.URL,
-		Description: w.Description,
-		IsActive:    w.IsActive,
-		EventTypes:  ParseEventTypes(w.EventTypes),
-		CreatedAt:   w.CreatedAt,
-		UpdatedAt:   w.UpdatedAt,
+		ID:                   w.ID,
+		URL:                  w.URL,
+		Description:          w.Description,
+		IsActive:             w.IsActive,
+		EventTypes:           ParseEventTypes(w.EventTypes),
+		CreatedAt:            w.CreatedAt,
+		UpdatedAt:            w.UpdatedAt,
+		FilterPhoneNumbers:   ParseEventTypes(w.FilterPhoneNumbers),
+		FilterPhoneMatchType: w.FilterPhoneMatchType,
+		FilterChatType:       w.FilterChatType,
+		FilterGroupJIDs:      ParseEventTypes(w.FilterGroupJIDs),
+		FilterGroupNames:     ParseEventTypes(w.FilterGroupNames),
 	}
 }
 
@@ -176,4 +206,29 @@ func trimSpace(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+// NormalizePhoneNumber normalizes a phone number for comparison
+// Removes spaces, dashes, and standardizes format
+func NormalizePhoneNumber(phone string) string {
+	// Remove common formatting characters
+	result := ""
+	for _, ch := range phone {
+		if ch >= '0' && ch <= '9' {
+			result += string(ch)
+		}
+	}
+	return result
+}
+
+// PhoneNumberMatches checks if a phone number matches any in the list
+// Uses flexible matching (ignores formatting differences)
+func PhoneNumberMatches(phone string, phoneList []string) bool {
+	normalizedPhone := NormalizePhoneNumber(phone)
+	for _, p := range phoneList {
+		if NormalizePhoneNumber(p) == normalizedPhone {
+			return true
+		}
+	}
+	return false
 }

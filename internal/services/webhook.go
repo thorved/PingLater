@@ -74,12 +74,19 @@ func (s *WebhookService) TriggerWebhooks(userID uint, eventType string, data int
 
 	fmt.Printf("[Webhook] Found %d active webhooks for user %d\n", len(webhooks), userID)
 
-	// Filter webhooks by event type
+	// Filter webhooks by event type and filters
 	triggeredCount := 0
 	for _, webhook := range webhooks {
 		eventTypes := models.ParseEventTypes(webhook.EventTypes)
 		fmt.Printf("[Webhook] Webhook %d event types: %v, checking for: %s\n", webhook.ID, eventTypes, eventType)
 		if contains(eventTypes, eventType) {
+			// Check if message data matches webhook filters
+			if msgData, ok := data.(models.MessageReceivedData); ok {
+				if !s.matchesFilters(&webhook, msgData) {
+					fmt.Printf("[Webhook] Webhook %d skipped - filters don't match\n", webhook.ID)
+					continue
+				}
+			}
 			fmt.Printf("[Webhook] Triggering webhook %d to URL: %s\n", webhook.ID, webhook.URL)
 			// Deliver webhook asynchronously
 			go s.deliverWebhook(&webhook, eventType, data)
@@ -88,6 +95,72 @@ func (s *WebhookService) TriggerWebhooks(userID uint, eventType string, data int
 	}
 
 	fmt.Printf("[Webhook] Triggered %d webhooks\n", triggeredCount)
+}
+
+// matchesFilters checks if message data matches webhook filter criteria
+func (s *WebhookService) matchesFilters(webhook *models.Webhook, data models.MessageReceivedData) bool {
+	// Check chat type filter
+	if webhook.FilterChatType != "" && webhook.FilterChatType != "all" {
+		isGroup := data.IsGroup
+		if webhook.FilterChatType == "individual" && isGroup {
+			return false
+		}
+		if webhook.FilterChatType == "group" && !isGroup {
+			return false
+		}
+	}
+
+	// Check phone number filter (only for individual chats or if explicitly set)
+	phoneNumbers := models.ParseEventTypes(webhook.FilterPhoneNumbers)
+	if len(phoneNumbers) > 0 {
+		matches := models.PhoneNumberMatches(data.FromPhone, phoneNumbers)
+		matchType := webhook.FilterPhoneMatchType
+		if matchType == "" {
+			matchType = "whitelist"
+		}
+
+		if matchType == "whitelist" && !matches {
+			return false
+		}
+		if matchType == "blacklist" && matches {
+			return false
+		}
+	}
+
+	// Check group filters (only relevant for group messages)
+	if data.IsGroup {
+		// Check group JID filter
+		groupJIDs := models.ParseEventTypes(webhook.FilterGroupJIDs)
+		if len(groupJIDs) > 0 {
+			matches := false
+			for _, jid := range groupJIDs {
+				if strings.EqualFold(jid, data.From) {
+					matches = true
+					break
+				}
+			}
+			if !matches {
+				return false
+			}
+		}
+
+		// Check group name filter
+		groupNames := models.ParseEventTypes(webhook.FilterGroupNames)
+		if len(groupNames) > 0 {
+			matches := false
+			for _, name := range groupNames {
+				if strings.EqualFold(name, data.GroupName) {
+					matches = true
+					break
+				}
+			}
+			if !matches {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // deliverWebhook sends a webhook notification and logs the delivery

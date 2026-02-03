@@ -125,7 +125,18 @@ export const api = {
     return res.json();
   },
 
-  async createWebhook(token: string, data: { url: string; secret?: string; description?: string; event_types: string[]; is_active: boolean }) {
+  async createWebhook(token: string, data: { 
+    url: string; 
+    secret?: string; 
+    description?: string; 
+    event_types: string[]; 
+    is_active: boolean;
+    filter_phone_numbers?: string[];
+    filter_phone_match_type?: string;
+    filter_chat_type?: string;
+    filter_group_jids?: string[];
+    filter_group_names?: string[];
+  }) {
     const res = await fetch(`${API_URL}/api/webhooks`, {
       method: 'POST',
       headers: { 
@@ -138,7 +149,18 @@ export const api = {
     return res.json();
   },
 
-  async updateWebhook(token: string, id: number, data: { url?: string; secret?: string; description?: string; event_types?: string[]; is_active?: boolean }) {
+  async updateWebhook(token: string, id: number, data: { 
+    url?: string; 
+    secret?: string; 
+    description?: string; 
+    event_types?: string[]; 
+    is_active?: boolean;
+    filter_phone_numbers?: string[];
+    filter_phone_match_type?: string;
+    filter_chat_type?: string;
+    filter_group_jids?: string[];
+    filter_group_names?: string[];
+  }) {
     const res = await fetch(`${API_URL}/api/webhooks/${id}`, {
       method: 'PUT',
       headers: { 
@@ -147,7 +169,10 @@ export const api = {
       },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to update webhook');
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(errorData.error || `Failed to update webhook: ${res.status}`);
+    }
     return res.json();
   },
 

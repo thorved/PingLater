@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -45,6 +46,11 @@ interface Webhook {
   event_types: string[];
   created_at: string;
   updated_at: string;
+  filter_phone_numbers: string[];
+  filter_phone_match_type: string;
+  filter_chat_type: string;
+  filter_group_jids: string[];
+  filter_group_names: string[];
 }
 
 interface WebhookEvent {
@@ -89,6 +95,11 @@ export default function WebhooksPage() {
     description: '',
     event_types: ['message_received'],
     is_active: true,
+    filter_phone_numbers: [] as string[],
+    filter_phone_match_type: 'whitelist',
+    filter_chat_type: 'all',
+    filter_group_jids: [] as string[],
+    filter_group_names: [] as string[],
   });
   
   // Testing state
@@ -164,6 +175,11 @@ export default function WebhooksPage() {
       description: '',
       event_types: ['message_received'],
       is_active: true,
+      filter_phone_numbers: [],
+      filter_phone_match_type: 'whitelist',
+      filter_chat_type: 'all',
+      filter_group_jids: [],
+      filter_group_names: [],
     });
     setIsEditing(false);
   };
@@ -180,6 +196,11 @@ export default function WebhooksPage() {
       description: webhook.description,
       event_types: webhook.event_types,
       is_active: webhook.is_active,
+      filter_phone_numbers: webhook.filter_phone_numbers || [],
+      filter_phone_match_type: webhook.filter_phone_match_type || 'whitelist',
+      filter_chat_type: webhook.filter_chat_type || 'all',
+      filter_group_jids: webhook.filter_group_jids || [],
+      filter_group_names: webhook.filter_group_names || [],
     });
     setIsEditing(true);
     setIsDialogOpen(true);
@@ -188,11 +209,54 @@ export default function WebhooksPage() {
   const handleSubmit = async () => {
     if (!token) return;
     
+    // Validation
+    if (!formData.url || formData.url.trim() === '') {
+      alert('Webhook URL is required');
+      return;
+    }
+    
+    if (!formData.url.startsWith('http://') && !formData.url.startsWith('https://')) {
+      alert('Webhook URL must start with http:// or https://');
+      return;
+    }
+    
+    if (formData.event_types.length === 0) {
+      alert('At least one event type is required');
+      return;
+    }
+    
+    // Validate filter values
+    if (formData.filter_phone_match_type && 
+        formData.filter_phone_match_type !== 'whitelist' && 
+        formData.filter_phone_match_type !== 'blacklist') {
+      alert('Phone match type must be whitelist or blacklist');
+      return;
+    }
+    
+    if (formData.filter_chat_type && 
+        formData.filter_chat_type !== 'all' && 
+        formData.filter_chat_type !== 'individual' && 
+        formData.filter_chat_type !== 'group') {
+      alert('Chat type must be all, individual, or group');
+      return;
+    }
+    
     try {
+      // Prepare data - ensure arrays are properly formatted
+      const submitData = {
+        ...formData,
+        // Ensure we're sending clean arrays
+        filter_phone_numbers: formData.filter_phone_numbers.filter(p => p && p.trim() !== ''),
+        filter_group_jids: formData.filter_group_jids.filter(j => j && j.trim() !== ''),
+        filter_group_names: formData.filter_group_names.filter(n => n && n.trim() !== ''),
+      };
+      
+      console.log('Submitting webhook data:', submitData);
+      
       if (isEditing && selectedWebhook) {
-        await api.updateWebhook(token, selectedWebhook.id, formData);
+        await api.updateWebhook(token, selectedWebhook.id, submitData);
       } else {
-        await api.createWebhook(token, formData);
+        await api.createWebhook(token, submitData);
       }
       setIsDialogOpen(false);
       resetForm();
@@ -200,9 +264,10 @@ export default function WebhooksPage() {
       if (selectedWebhook) {
         fetchStats(selectedWebhook.id);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save webhook:', error);
-      alert('Failed to save webhook. Please check your input and try again.');
+      const errorMessage = error?.message || 'Failed to save webhook. Please check your input and try again.';
+      alert(errorMessage);
     }
   };
 
@@ -366,6 +431,37 @@ export default function WebhooksPage() {
                             </Badge>
                           )}
                         </div>
+                        {/* Filter badges */}
+                        {(webhook.filter_chat_type && webhook.filter_chat_type !== 'all') && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <span className="text-xs text-muted-foreground">Filters:</span>
+                            {webhook.filter_chat_type === 'individual' && (
+                              <Badge variant="secondary" className="text-xs">
+                                Individual only
+                              </Badge>
+                            )}
+                            {webhook.filter_chat_type === 'group' && (
+                              <Badge variant="secondary" className="text-xs">
+                                Groups only
+                              </Badge>
+                            )}
+                            {webhook.filter_phone_numbers && webhook.filter_phone_numbers.length > 0 && (
+                              <Badge variant="secondary" className="text-xs">
+                                {webhook.filter_phone_match_type === 'blacklist' ? 'Blacklist' : 'Whitelist'}: {webhook.filter_phone_numbers.length} numbers
+                              </Badge>
+                            )}
+                            {webhook.filter_group_jids && webhook.filter_group_jids.length > 0 && (
+                              <Badge variant="secondary" className="text-xs">
+                                {webhook.filter_group_jids.length} groups
+                              </Badge>
+                            )}
+                            {webhook.filter_group_names && webhook.filter_group_names.length > 0 && (
+                              <Badge variant="secondary" className="text-xs">
+                                {webhook.filter_group_names.length} group names
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
@@ -477,6 +573,73 @@ export default function WebhooksPage() {
                           ))}
                         </div>
                       </div>
+
+                      {(selectedWebhook.filter_chat_type && selectedWebhook.filter_chat_type !== 'all') || 
+                       (selectedWebhook.filter_phone_numbers && selectedWebhook.filter_phone_numbers.length > 0) ||
+                       (selectedWebhook.filter_group_jids && selectedWebhook.filter_group_jids.length > 0) ||
+                       (selectedWebhook.filter_group_names && selectedWebhook.filter_group_names.length > 0) ? (
+                        <>
+                          <Separator />
+                          <div>
+                            <Label className="text-muted-foreground">Filters</Label>
+                            <div className="space-y-3 mt-2">
+                              {selectedWebhook.filter_chat_type && selectedWebhook.filter_chat_type !== 'all' && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Chat Type:</span>
+                                  <Badge variant="outline">{selectedWebhook.filter_chat_type}</Badge>
+                                </div>
+                              )}
+                              
+                              {selectedWebhook.filter_phone_numbers && selectedWebhook.filter_phone_numbers.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-sm text-muted-foreground">
+                                      Phone Numbers ({selectedWebhook.filter_phone_match_type || 'whitelist'}):
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedWebhook.filter_phone_numbers.map((phone, idx) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">
+                                        {phone}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {selectedWebhook.filter_group_jids && selectedWebhook.filter_group_jids.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-sm text-muted-foreground">Group JIDs:</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedWebhook.filter_group_jids.map((jid, idx) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">
+                                        {jid}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {selectedWebhook.filter_group_names && selectedWebhook.filter_group_names.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-sm text-muted-foreground">Group Names:</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedWebhook.filter_group_names.map((name, idx) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">
+                                        {name}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      ) : null}
 
                       {testResult && (
                         <>
@@ -636,7 +799,7 @@ export default function WebhooksPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isEditing ? 'Edit Webhook' : 'Create Webhook'}</DialogTitle>
             <DialogDescription>
@@ -705,6 +868,108 @@ export default function WebhooksPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="border-t pt-4 mt-4">
+              <h4 className="text-sm font-medium mb-4 flex items-center gap-2">
+                <span className="bg-primary/10 text-primary px-2 py-1 rounded text-xs">Filters</span>
+                <span className="text-xs text-muted-foreground">Optional filters to control which messages trigger this webhook</span>
+              </h4>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="filter_chat_type">Chat Type</Label>
+                  <select
+                    id="filter_chat_type"
+                    value={formData.filter_chat_type}
+                    onChange={(e) => setFormData(prev => ({ ...prev, filter_chat_type: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-md bg-background text-sm"
+                  >
+                    <option value="all">All Chats</option>
+                    <option value="individual">Individual Chats Only</option>
+                    <option value="group">Groups Only</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="filter_phones">Phone Numbers</Label>
+                  <Textarea
+                    id="filter_phones"
+                    placeholder="+1234567890, +9876543210 (comma-separated)"
+                    value={formData.filter_phone_numbers.join(', ')}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      filter_phone_numbers: e.target.value.split(',').map(s => s.trim()).filter(s => s)
+                    }))}
+                    className="min-h-[80px]"
+                  />
+                  <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                    <span className="font-medium">💡 Tip:</span> Separate multiple numbers with commas. Supports flexible formatting (+1-234-567-8900, +12345678900, etc.)
+                  </div>
+                  <div className="flex items-center gap-4 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="filter_phone_match_type"
+                        value="whitelist"
+                        checked={formData.filter_phone_match_type === 'whitelist'}
+                        onChange={(e) => setFormData(prev => ({ ...prev, filter_phone_match_type: e.target.value }))}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Whitelist (only these)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="filter_phone_match_type"
+                        value="blacklist"
+                        checked={formData.filter_phone_match_type === 'blacklist'}
+                        onChange={(e) => setFormData(prev => ({ ...prev, filter_phone_match_type: e.target.value }))}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Blacklist (exclude these)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {(formData.filter_chat_type === 'group' || formData.filter_chat_type === 'all') && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="filter_group_jids">Group JIDs</Label>
+                      <Textarea
+                        id="filter_group_jids"
+                        placeholder="123456789@g.us, 987654321@g.us (comma-separated)"
+                        value={formData.filter_group_jids.join(', ')}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          filter_group_jids: e.target.value.split(',').map(s => s.trim()).filter(s => s)
+                        }))}
+                        className="min-h-[60px]"
+                      />
+                      <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                        <span className="font-medium">💡 Tip:</span> Add multiple JIDs separated by commas. Format: <code className="bg-muted px-1 rounded">number@g.us</code>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="filter_group_names">Group Names</Label>
+                      <Textarea
+                        id="filter_group_names"
+                        placeholder="Family Group, Work Team (comma-separated)"
+                        value={formData.filter_group_names.join(', ')}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          filter_group_names: e.target.value.split(',').map(s => s.trim()).filter(s => s)
+                        }))}
+                        className="min-h-[60px]"
+                      />
+                      <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                        <span className="font-medium">💡 Tip:</span> Add multiple group names separated by commas. Case-insensitive matching.
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             

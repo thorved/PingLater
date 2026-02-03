@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -56,14 +57,31 @@ func CreateWebhook(c *gin.Context) {
 		return
 	}
 
+	// Validate filter phone match type
+	if req.FilterPhoneMatchType != "" && req.FilterPhoneMatchType != "whitelist" && req.FilterPhoneMatchType != "blacklist" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "filter_phone_match_type must be 'whitelist' or 'blacklist'"})
+		return
+	}
+
+	// Validate filter chat type
+	if req.FilterChatType != "" && req.FilterChatType != "all" && req.FilterChatType != "individual" && req.FilterChatType != "group" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "filter_chat_type must be 'all', 'individual', or 'group'"})
+		return
+	}
+
 	// Create webhook
 	webhook := models.Webhook{
-		UserID:      userID.(uint),
-		URL:         req.URL,
-		Secret:      req.Secret,
-		Description: req.Description,
-		EventTypes:  models.JoinEventTypes(req.EventTypes),
-		IsActive:    req.IsActive,
+		UserID:               userID.(uint),
+		URL:                  req.URL,
+		Secret:               req.Secret,
+		Description:          req.Description,
+		EventTypes:           models.JoinEventTypes(req.EventTypes),
+		IsActive:             req.IsActive,
+		FilterPhoneNumbers:   models.JoinEventTypes(req.FilterPhoneNumbers),
+		FilterPhoneMatchType: req.FilterPhoneMatchType,
+		FilterChatType:       req.FilterChatType,
+		FilterGroupJIDs:      models.JoinEventTypes(req.FilterGroupJIDs),
+		FilterGroupNames:     models.JoinEventTypes(req.FilterGroupNames),
 	}
 
 	database := db.GetDB()
@@ -130,6 +148,18 @@ func UpdateWebhook(c *gin.Context) {
 		return
 	}
 
+	// Validate filter phone match type
+	if req.FilterPhoneMatchType != "" && req.FilterPhoneMatchType != "whitelist" && req.FilterPhoneMatchType != "blacklist" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "filter_phone_match_type must be 'whitelist' or 'blacklist'"})
+		return
+	}
+
+	// Validate filter chat type
+	if req.FilterChatType != "" && req.FilterChatType != "all" && req.FilterChatType != "individual" && req.FilterChatType != "group" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "filter_chat_type must be 'all', 'individual', or 'group'"})
+		return
+	}
+
 	// Update fields
 	updates := make(map[string]interface{})
 
@@ -139,7 +169,9 @@ func UpdateWebhook(c *gin.Context) {
 	if req.Secret != "" {
 		updates["secret"] = req.Secret
 	}
-	if req.Description != "" {
+	// Description can be empty, so check if it was provided (not nil in JSON)
+	// For now, we'll update it if URL is being updated (form submission)
+	if req.URL != "" || req.Description != "" {
 		updates["description"] = req.Description
 	}
 	if req.EventTypes != nil {
@@ -148,9 +180,31 @@ func UpdateWebhook(c *gin.Context) {
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
 	}
+	// Filter fields - update even if empty array (to clear filters)
+	if req.FilterPhoneNumbers != nil {
+		updates["filter_phone_numbers"] = models.JoinEventTypes(req.FilterPhoneNumbers)
+	}
+	if req.FilterPhoneMatchType != "" {
+		updates["filter_phone_match_type"] = req.FilterPhoneMatchType
+	}
+	if req.FilterChatType != "" {
+		updates["filter_chat_type"] = req.FilterChatType
+	}
+	if req.FilterGroupJIDs != nil {
+		updates["filter_group_jids"] = models.JoinEventTypes(req.FilterGroupJIDs)
+	}
+	if req.FilterGroupNames != nil {
+		updates["filter_group_names"] = models.JoinEventTypes(req.FilterGroupNames)
+	}
+
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
+		return
+	}
 
 	if result := database.Model(&webhook).Updates(updates); result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update webhook"})
+		fmt.Printf("[Webhook Update] Error updating webhook %d: %v\n", webhookID, result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update webhook: " + result.Error.Error()})
 		return
 	}
 
